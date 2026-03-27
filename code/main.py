@@ -20,6 +20,7 @@ if __name__ == "__main__":
 
     learning_rate = 5e-4
     gradient_clipping = 1.0
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     num_batches_to_train = 50000
 
@@ -36,7 +37,7 @@ if __name__ == "__main__":
         tokenizer.vocab_size(),
         mlp_hidden_size,
         with_residuals=True,
-    )
+    ).to(device)
 
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, betas=[0.9, 0.95])
 
@@ -50,6 +51,8 @@ if __name__ == "__main__":
             num_batches = num_batches + 1
 
             batch_x, batch_y = lm.batch_to_labeled_samples(batch)
+            batch_x = batch_x.to(device)
+            batch_y = batch_y.to(device)
 
             logits = model(batch_x)
 
@@ -63,7 +66,7 @@ if __name__ == "__main__":
 
             num_batches += 1
             if num_batches % 10 == 0:
-                print(f"Seen {num_batches} batches. last loss is: {loss.item()}")
+                print(f"Seen {num_batches} batches on {device}. last loss is: {loss.item()}")
                 if num_batches % 100 == 0:
                     for _ in range(1):
                         model.eval()
