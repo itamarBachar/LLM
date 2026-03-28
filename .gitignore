@@ -3,3 +3,8 @@ code/attention.py
 code/__pycache__/attention.cpython-39.pyc
 code/__pycache__/tests.cpython-39-pytest-7.1.1.pyc
 code/__pycache__/tests.cpython-312-pytest-9.0.2.pyc
+code/__pycache__/attention.cpython-312.pyc
+code/__pycache__/data.cpython-312.pyc
+code/__pycache__/lm.cpython-312.pyc
+code/__pycache__/mlp.cpython-312.pyc
+code/__pycache__/transformer.cpython-312.pyc
