@@ -1,5 +1,8 @@
 import torch
 import attention
+import os
+import tempfile
+import data
 
 def test_kqv():
     """Test that kqv correctly computes Keys, Queries, and Values from input."""
@@ -112,4 +115,20 @@ def test_self_attention():
     assert torch.allclose(sa, expected_output), f"Output {sa} != expected {expected_output}"
 
     print("✓ test_self_attention passed")
+
+
+def test_tokenizer_save_load_round_trip():
+    tokenizer = data.CharTokenizer()
+    tokenizer.train(["hello world", "another line"])
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "tokenizer.json")
+        tokenizer.save(path)
+        loaded = data.CharTokenizer.load(path)
+
+    assert loaded.vocab == tokenizer.vocab
+    assert loaded.stoi == tokenizer.stoi
+    assert loaded.detokenize(loaded.tokenize("hello")) == "hello"
+
+    print("✓ test_tokenizer_save_load_round_trip passed")
 

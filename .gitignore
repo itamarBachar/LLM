@@ -8,3 +8,11 @@ code/__pycache__/data.cpython-312.pyc
 code/__pycache__/lm.cpython-312.pyc
 code/__pycache__/mlp.cpython-312.pyc
 code/__pycache__/transformer.cpython-312.pyc
+/checkpoints/*
+/.vscode/*
+.gitignore
+code/__pycache__/data.cpython-39.pyc
+.gitignore
+code/__pycache__/lm.cpython-39.pyc
+code/__pycache__/mlp.cpython-39.pyc
+code/__pycache__/transformer.cpython-39.pyc

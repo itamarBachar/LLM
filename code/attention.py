@@ -62,10 +62,8 @@ def self_attention_layer(x, kqv_matrix, attention_mask):
 
 def multi_head_attention_layer(x, kqv_matrices, mask):
     B, N, D = x.size()
-    # TODO implement multi-head attention.
     # This is most easily done using calls to self_attention_layer, each with a different
     # entry in kqv_matrices, and combining the results.
-    #
     # There is also a tricker (but more efficient) version of multi-head attention, where we do all the computation
     # using a single multiplication with a single kqv_matrix (or a single kqv_tensor) and re-arranging the results afterwards.
     # If you want a challenge, you can try and implement this. You may need to change additional places in the code accordingly.

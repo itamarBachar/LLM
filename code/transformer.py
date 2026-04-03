@@ -92,21 +92,17 @@ class TransformerLM(nn.Module):
 
     def init_weights(self):
         # initialize weights
-        # TODO implement initialization logic for embeddings and linear layers.
-        # The code break down the parameters by type (layer-norm, linear, embedding),
-        # but can also condition on individual names, for example by checking pn.endswith(...).
-        for pn, p in self.named_parameters():
-            if isinstance(p, nn.LayerNorm):
-                torch.nn.init.zeros_(p.bias)
-                torch.nn.init.ones_(p.weight)
-            elif isinstance(p, nn.Linear):
-                # TODO initialize p.weight and p.bias (if it is not None).
-                # You can look at initializers in torch.nn.init
-                pass
-            elif isinstance(p, nn.Embedding):
-                # TODO initialize p.weight and p.bias (if it is not None).
-                # You can look at initializers in torch.nn.init
-                pass
+        # Use module types here: named_parameters() yields Parameters, not modules.
+        for module in self.modules():
+            if isinstance(module, nn.LayerNorm):
+                torch.nn.init.zeros_(module.bias)
+                torch.nn.init.ones_(module.weight)
+            elif isinstance(module, nn.Linear):
+                torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+                if module.bias is not None:
+                    torch.nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.Embedding):
+                torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
 
     def sample_continuation(self, prefix: list[int], max_tokens_to_generate: int) -> list[int]:
@@ -128,9 +124,34 @@ class TransformerLM(nn.Module):
         return generated
 
     def better_sample_continuation(self, prefix: list[int], max_tokens_to_generate: int, temperature: float, topK: int) -> list[int]:
-        raise Exception("Not implemented")
-        # TODO implement this.
-        # Temperature should be the temperature in which you sample.
-        # TopK indicates that we don't sample from the entire distribution, but only from the top k scoring tokens
-        # for the given position.
+        feed_to_lm = prefix[:]
+        generated = []
+        model_device = next(self.parameters()).device
+        with torch.no_grad():
+            while len(generated) < max_tokens_to_generate:
+                if len(feed_to_lm) > self.max_context_len:
+                    # if we have more tokens than context length, trim it to context length.
+                    feed_to_lm = feed_to_lm[-self.max_context_len:]
+                logits = self(torch.tensor([feed_to_lm], dtype=torch.long, device=model_device))
+                logits_for_last_token = logits[0][-1]
+                
+                # Apply temperature scaling
+                scaled_logits = logits_for_last_token / temperature
+                
+                # Apply top-k filtering
+                topk_logits, topk_indices = torch.topk(scaled_logits, k=topK)
+                
+                # Create a tensor with -inf for all positions, then fill in top-k
+                filtered_logits = torch.full_like(scaled_logits, float('-inf'))
+                filtered_logits[topk_indices] = topk_logits
+                
+                # Compute softmax over the filtered logits
+                distribution_for_last_token = F.softmax(filtered_logits, dim=-1)
+                
+                # Sample from the distribution
+                sampled_token = torch.multinomial(distribution_for_last_token, num_samples=1)
+                sampled_token_id = int(sampled_token.item())
+                generated.append(sampled_token_id)
+                feed_to_lm.append(sampled_token_id)
+        return generated
 
