@@ -37,6 +37,77 @@ def tokenize_with_existing_tokenizer(tokenizer: data.CharTokenizer, data_path: s
     return tokenized_data
 
 
+def split_tokenized_data(
+    tokenized_data: list[list[int]],
+    seq_len_plus_one: int,
+    validation_split: float,
+) -> tuple[list[list[int]], list[list[int]]]:
+    eligible = [seq for seq in tokenized_data if len(seq) >= seq_len_plus_one]
+    if not eligible:
+        return tokenized_data, []
+
+    if validation_split <= 0.0:
+        return eligible, []
+
+    # Special case: only one long sequence
+    if len(eligible) == 1:
+        seq = eligible[0]
+        split_idx = int(len(seq) * (1.0 - validation_split))
+
+        # Keep both train and val long enough to produce at least one sample
+        min_len = seq_len_plus_one
+        if split_idx < min_len:
+            split_idx = min_len
+        if len(seq) - split_idx < min_len:
+            split_idx = len(seq) - min_len
+
+        if split_idx < min_len or len(seq) - split_idx < min_len:
+            return [seq], []
+
+        train_data = [seq[:split_idx]]
+        val_data = [seq[split_idx:]]
+        return train_data, val_data
+
+    # Multi-sequence case
+    val_count = max(1, int(len(eligible) * validation_split))
+    val_count = min(val_count, len(eligible) - 1)
+    if val_count <= 0:
+        return eligible, []
+
+    train_data = eligible[:-val_count]
+    val_data = eligible[-val_count:]
+    return train_data, val_data
+
+
+def estimate_split_loss(
+    model: torch.nn.Module,
+    split_data: list[list[int]],
+    seq_len: int,
+    batch_size: int,
+    eval_batches: int,
+    device: torch.device,
+) -> float:
+    if not split_data:
+        return float("nan")
+
+    eval_iter = iter(data.RandomOrderDataIterator(split_data, seq_len + 1))
+    losses: list[float] = []
+    with torch.no_grad():
+        for batch in data.batch_items(eval_iter, batch_size):
+            batch_x, batch_y = lm.batch_to_labeled_samples(batch)
+            batch_x = batch_x.to(device)
+            batch_y = batch_y.to(device)
+            logits = model(batch_x)
+            loss = lm.compute_loss(logits, batch_y)
+            losses.append(float(loss.item()))
+            if len(losses) >= eval_batches:
+                break
+
+    if not losses:
+        return float("nan")
+    return sum(losses) / len(losses)
+
+
 def save_checkpoint(
     checkpoint_path: str,
     model: torch.nn.Module,
@@ -102,6 +173,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use-better-sampling",default=True, action="store_true", help="Use temperature and top-k sampling instead of basic sampling")
     parser.add_argument("--sample-temperature", type=float, default=0.7)
     parser.add_argument("--sample-topk", type=int, default=5)
+    parser.add_argument("--validation-split", type=float, default=0.1)
+    parser.add_argument("--validate-every", type=int, default=100)
+    parser.add_argument("--validation-batches", type=int, default=10)
 
     parser.add_argument("--checkpoint-dir", type=str, default="../checkpoints")
     parser.add_argument("--checkpoint-every", type=int, default=1000)
@@ -160,8 +234,23 @@ def main() -> None:
             group["lr"] = args.override_lr
         print(f"Overrode optimizer learning rate to {args.override_lr}")
 
-    # Data items are one token longer than model context for next-token labels.
-    data_iter = iter(data.RandomOrderDataIterator(tokenized_data, model_config["max_context_len"] + 1))
+    train_data, val_data = split_tokenized_data(
+        tokenized_data,
+        seq_len_plus_one=model_config["max_context_len"] + 1,
+        validation_split=args.validation_split,
+    )
+
+    if not train_data:
+        raise ValueError("No training sequences are long enough for the selected sequence length.")
+
+    if val_data:
+        print(f"Using {len(train_data)} train sequences and {len(val_data)} validation sequences")
+        print(f"Train token count: {sum(len(x) for x in train_data)}")
+        print(f"Val token count: {sum(len(x) for x in val_data)}")
+    else:
+        print("Validation disabled (no eligible validation split); training on all eligible sequences")
+
+    data_iter = iter(data.RandomOrderDataIterator(train_data, model_config["max_context_len"] + 1))
 
     model.train()
     num_batches = start_batch
@@ -215,6 +304,27 @@ def main() -> None:
             if args.log_every > 0 and num_batches % args.log_every == 0:
                 print(f"Seen {num_batches} batches on {device}. lr={current_lr:.8f}. last loss is: {loss.item()}")
 
+            if (
+                val_data
+                and args.validate_every > 0
+                and args.validation_batches > 0
+                and num_batches % args.validate_every == 0
+            ):
+                model.eval()
+                val_loss = estimate_split_loss(
+                    model,
+                    split_data=val_data,
+                    seq_len=model_config["max_context_len"],
+                    batch_size=args.batch_size,
+                    eval_batches=args.validation_batches,
+                    device=device,
+                )
+                model.train()
+                if math.isnan(val_loss):
+                    print(f"Validation at batch {num_batches}: no valid validation batches")
+                else:
+                    print(f"Validation at batch {num_batches}: val_loss={val_loss:.6f}")
+
             if args.sample_every > 0 and num_batches % args.sample_every == 0:
                 model.eval()
                 if args.use_better_sampling:
@@ -223,7 +333,7 @@ def main() -> None:
                             tokenizer.tokenize(args.sample_prefix),
                             args.sample_len,
                             temperature=args.sample_temperature,
-                            topK=args.sample_topk
+                            topK=args.sample_topk,
                         )
                     )
                 else:
