@@ -155,20 +155,23 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train a tiny transformer language model")
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--data-path", type=str, default="../data/en/")
+    parser.add_argument("--data-path", type=str, default="/content/drive/MyDrive/LLM/data/he")
     parser.add_argument("--n-layers", type=int, default=6)
     parser.add_argument("--n-heads", type=int, default=6)
     parser.add_argument("--embed-size", type=int, default=192)
     parser.add_argument("--mlp-hidden-size", type=int, default=None)
-    parser.add_argument("--learning-rate", type=float, default=5e-4)
-    parser.add_argument("--min-learning-rate", type=float, default=5e-5)
+    parser.add_argument("--embedding-dropout", type=float, default=0.2)
+    parser.add_argument("--attention-dropout", type=float, default=0.2)
+    parser.add_argument("--attention-output-dropout", type=float, default=0.2)
+    parser.add_argument("--learning-rate", type=float, default=2e-4)
+    parser.add_argument("--min-learning-rate", type=float, default=2e-5)
     parser.add_argument("--lr-warmup-batches", type=int, default=2000)
     parser.add_argument("--lr-schedule", type=str, choices=["constant", "warmup-cosine"], default="warmup-cosine")
     parser.add_argument("--gradient-clipping", type=float, default=1.0)
-    parser.add_argument("--num-batches-to-train", type=int, default=50000)
+    parser.add_argument("--num-batches-to-train", type=int, default=12000)
     parser.add_argument("--log-every", type=int, default=10)
     parser.add_argument("--sample-every", type=int, default=100)
-    parser.add_argument("--sample-prefix", type=str, default="Hello")
+    parser.add_argument("--sample-prefix", type=str, default="שלום")
     parser.add_argument("--sample-len", type=int, default=500)
     parser.add_argument("--use-better-sampling",default=True, action="store_true", help="Use temperature and top-k sampling instead of basic sampling")
     parser.add_argument("--sample-temperature", type=float, default=0.7)
@@ -192,7 +195,7 @@ def main() -> None:
 
     mlp_hidden_size = args.mlp_hidden_size if args.mlp_hidden_size is not None else args.embed_size * 4
 
-    tokenizer, tokenized_data = data.load_data(args.data_path)
+    tokenizer, tokenized_data = data.load(args.data_path)
 
     model_config = {
         "n_layers": args.n_layers,
@@ -203,6 +206,9 @@ def main() -> None:
         "mlp_hidden_size": mlp_hidden_size,
         "with_residuals": True,
         "pre_norm": True,
+        "embedding_dropout_p": args.embedding_dropout,
+        "attention_dropout_p": args.attention_dropout,
+        "attention_output_dropout_p": args.attention_output_dropout,
     }
 
     model: torch.nn.Module = TransformerLM(**model_config).to(device)

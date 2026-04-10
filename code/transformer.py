@@ -5,9 +5,25 @@ import attention
 import mlp
 
 class TransformerDecoderBlock(nn.Module):
-    def __init__(self, n_heads: int, embed_size: int, mlp_hidden_size: int, max_context_len, with_residuals: bool = False, pre_norm: bool = True):
+    def __init__(
+        self,
+        n_heads: int,
+        embed_size: int,
+        mlp_hidden_size: int,
+        max_context_len,
+        with_residuals: bool = False,
+        pre_norm: bool = True,
+        attention_dropout_p: float = 0.1,
+        attention_output_dropout_p: float = 0.1,
+    ):
         super().__init__()
-        self.causal_attention = attention.CausalSelfAttention(embed_size, n_heads, max_context_len)
+        self.causal_attention = attention.CausalSelfAttention(
+            embed_size,
+            n_heads,
+            max_context_len,
+            attn_dropout_p=attention_dropout_p,
+            output_dropout_p=attention_output_dropout_p,
+        )
         self.mlp = mlp.MLP(embed_size, mlp_hidden_size)
         self.layer_norm_1 = nn.LayerNorm(embed_size)
         self.layer_norm_2 = nn.LayerNorm(embed_size)
@@ -69,10 +85,26 @@ class TransformerLM(nn.Module):
             mlp_hidden_size: int,
             with_residuals: bool,
             pre_norm: bool = True,
+            embedding_dropout_p: float = 0.1,
+            attention_dropout_p: float = 0.1,
+            attention_output_dropout_p: float = 0.1,
             ):
         super().__init__()
         self.embed = Embed(vocab_size, embed_size, max_context_len)
-        self.layers = nn.ModuleList([TransformerDecoderBlock(n_heads, embed_size, mlp_hidden_size, max_context_len, with_residuals, pre_norm) for _ in range(n_layers)])
+        self.embedding_dropout = nn.Dropout(embedding_dropout_p)
+        self.layers = nn.ModuleList([
+            TransformerDecoderBlock(
+                n_heads,
+                embed_size,
+                mlp_hidden_size,
+                max_context_len,
+                with_residuals,
+                pre_norm,
+                attention_dropout_p,
+                attention_output_dropout_p,
+            )
+            for _ in range(n_layers)
+        ])
         self.layer_norm = nn.LayerNorm(embed_size)
         self.word_prediction = nn.Linear(embed_size, vocab_size)
         self.max_context_len = max_context_len
@@ -84,6 +116,7 @@ class TransformerLM(nn.Module):
 
     def forward(self, inputs):
         x = self.embed(inputs)
+        x = self.embedding_dropout(x)
         for layer in self.layers:
             x = layer(x)
         x = self.layer_norm(x)
