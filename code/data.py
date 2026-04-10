@@ -104,4 +104,3 @@ def batch_items(data_iter: Iterator[list[int]], batch_size: int = 2) -> Iterator
             batch = []
     if len(batch) > 0:
         yield torch.tensor(batch, dtype=torch.long)
-
