@@ -30,26 +30,43 @@ class TransformerDecoderBlock(nn.Module):
         self.with_residuals = with_residuals
         self.pre_norm = pre_norm
 
-    def forward(self, inputs):
+    def forward(self, inputs, return_attn: bool = False):
         x = inputs
+        layer_attn = None
         if self.pre_norm:
             if self.with_residuals:
-                x = x + self.causal_attention(self.layer_norm_1(x))
+                if return_attn:
+                    attn_out, layer_attn = self.causal_attention(self.layer_norm_1(x), return_attn=True)
+                else:
+                    attn_out = self.causal_attention(self.layer_norm_1(x))
+                x = x + attn_out
                 x = x + self.mlp(self.layer_norm_2(x))
             else:
                 x = self.layer_norm_1(x)
-                x = self.causal_attention(x)
+                if return_attn:
+                    x, layer_attn = self.causal_attention(x, return_attn=True)
+                else:
+                    x = self.causal_attention(x)
                 x = self.layer_norm_2(x)
                 x = self.mlp(x)
         else:
             if self.with_residuals:
-                x = self.layer_norm_1(x + self.causal_attention(x))
+                if return_attn:
+                    attn_out, layer_attn = self.causal_attention(x, return_attn=True)
+                else:
+                    attn_out = self.causal_attention(x)
+                x = self.layer_norm_1(x + attn_out)
                 x = self.layer_norm_2(x + self.mlp(x))
             else:
-                x = self.causal_attention(x)
+                if return_attn:
+                    x, layer_attn = self.causal_attention(x, return_attn=True)
+                else:
+                    x = self.causal_attention(x)
                 x = self.layer_norm_1(x)
                 x = self.mlp(x)
                 x = self.layer_norm_2(x)
+        if return_attn:
+            return x, layer_attn
         return x
 
 class Embed(nn.Module):
@@ -114,13 +131,20 @@ class TransformerLM(nn.Module):
         n_params = sum(p.numel() for p in self.parameters())
         print("Parameter count: %.2fM" % (n_params/1e6,))
 
-    def forward(self, inputs):
+    def forward(self, inputs, return_attn: bool = False):
         x = self.embed(inputs)
         x = self.embedding_dropout(x)
+        attentions = []
         for layer in self.layers:
-            x = layer(x)
+            if return_attn:
+                x, layer_attn = layer(x, return_attn=True)
+                attentions.append(layer_attn)
+            else:
+                x = layer(x)
         x = self.layer_norm(x)
         logits = self.word_prediction(x)
+        if return_attn:
+            return logits, attentions
         return logits
 
     def init_weights(self):
